@@ -1,0 +1,28 @@
+{
+  "name": "rss-to-blogger",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "cheerio": "^1.1.2",
+    "google-auth-library": "^10.5.0",
+    "google-spreadsheet": "^5.0.2",
+    "googleapis": "^166.0.0",
+    "mongodb": "^7.0.0",
+    "nuxt": "^4.2.1",
+    "ofetch": "^1.5.1",
+    "rss-parser": "^3.13.0",
+    "vue": "^3.5.25",
+    "vue-router": "^4.6.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
+  }
+}
