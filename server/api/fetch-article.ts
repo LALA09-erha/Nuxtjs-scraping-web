@@ -679,15 +679,7 @@ export default defineEventHandler(async (event) => {
                 { sort: { createdAt: 1 } }
                 )
             }
-            
-            if (!oldest) {
-                // Cari yang statusnya bukan failed/posted (misal: 'pending' atau lainnya)
-                oldest = await articles.findOne(
-                { status: { $nin: ['failed', 'posted'] } }, 
-                { sort: { createdAt: 1 } }
-                )
-            }
-            
+
             if (!oldest) {
                 // Jika semua gagal, ambil yang paling tua saja tanpa filter
                 oldest = await articles.findOne({}, { sort: { createdAt: 1 } })
