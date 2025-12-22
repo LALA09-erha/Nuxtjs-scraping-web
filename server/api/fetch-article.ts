@@ -554,7 +554,6 @@ export default defineEventHandler(async (event) => {
     const metadata = db.collection('metadata')
 
     const now = new Date()
-    now.setHours(23, 0, 0, 0)
     // Cek apakah sekarang jam 10 malam keatas  
     const currentHour = now.getHours();
     const isTenPM = currentHour === 22 || currentHour === 23;

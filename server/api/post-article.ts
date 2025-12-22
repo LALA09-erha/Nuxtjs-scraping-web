@@ -148,7 +148,6 @@ export default defineEventHandler(async (event) => {
     const metadata = db.collection('metadata')
 
     const now = new Date()
-    now.setHours(23, 30, 0, 0)
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     // run setiap 23.30
