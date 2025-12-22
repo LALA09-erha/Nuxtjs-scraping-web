@@ -648,20 +648,63 @@ export default defineEventHandler(async (event) => {
       if (existing) {
         continue
       }
-      // hapus 1 data yang createdAt nya terlama dari semua data yang ada dan status nya failed
-      const oldestCreatedAt = await articles.findOne({ status: 'failed' }, { sort: { createdAt: 1 } })
-      if (oldestCreatedAt) {
-        await articles.deleteOne({ createdAt: oldestCreatedAt.createdAt })
-      }
+      
       // check pokoknya yg ada di database max 7 data
-      totalCount = await articles.countDocuments()
-      // kalo totalnya udah 7, hapus data yg createdAt nya terlama
-      if (totalCount >= 7) {
-        const oldest = await articles.findOne({ status: { $in: ['failed', 'posted'] } }, { sort: { createdAt: 1 } })
-        if (oldest) {
-          await articles.deleteOne({ createdAt: oldest.createdAt })
+        totalCount = await articles.countDocuments()
+
+        if (totalCount >= 7) {
+            // Prioritas: cari yang paling tua dengan urutan:
+            // 1. status = 'failed'
+            // 2. status = 'posted'
+            // 3. status tidak ada (null/tidak ada field status)
+            // 4. status lainnya (termasuk 'pending')
+            
+            // Coba cari dari prioritas tertinggi ke terendah
+            let oldest = await articles.findOne(
+                { status: 'failed' }, 
+                { sort: { createdAt: 1 } }
+            )
+            
+            if (!oldest) {
+                oldest = await articles.findOne(
+                { status: 'posted' }, 
+                { sort: { createdAt: 1 } }
+                )
+            }
+            
+            if (!oldest) {
+                // Cari yang tidak ada status field-nya
+                oldest = await articles.findOne(
+                { status: { $exists: false } }, 
+                { sort: { createdAt: 1 } }
+                )
+            }
+            
+            if (!oldest) {
+                // Cari yang statusnya bukan failed/posted (misal: 'pending' atau lainnya)
+                oldest = await articles.findOne(
+                { status: { $nin: ['failed', 'posted'] } }, 
+                { sort: { createdAt: 1 } }
+                )
+            }
+            
+            if (!oldest) {
+                // Jika semua gagal, ambil yang paling tua saja tanpa filter
+                oldest = await articles.findOne({}, { sort: { createdAt: 1 } })
+            }
+            
+            if (oldest) {
+                console.log(`🗑️ Menghapus artikel terlama: "${oldest.title?.substring(0, 30)}..." (status: ${oldest.status || 'no-status'})`)
+                await articles.deleteOne({ _id: oldest._id })
+            }
+            
+            // Cek ulang total count setelah hapus
+            totalCount = await articles.countDocuments()
+            if (totalCount >= 7) {
+                console.log('⚠️ Masih ada lebih dari 7 data, skip penyimpanan artikel baru.')
+                continue
+            }
         }
-      }
       const insertResult = await articles.insertOne(articleData)
       console.log(`✅ Artikel disimpan dengan ID: ${insertResult.insertedId}`)
     }
