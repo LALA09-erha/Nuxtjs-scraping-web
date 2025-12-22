@@ -133,90 +133,6 @@ async function initializeBloggerAPI(): Promise<any> {
   }
 }
 
-/**
- * Post artikel ke Blogger dengan retry mechanism
- */
-async function postToBloggerWithRetry(article: {
-  title: string;
-  content: string;
-  tags?: string[];
-  category?: string;
-  excerpt?: string;
-  originalUrl?: string;
-  featuredImage?: string;
-}, maxRetries: number = 3): Promise<{
-  success: boolean;
-  blogUrl?: string;
-  postId?: string;
-  error?: any;
-}> {
-  let lastError
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`📝 Mencoba posting ke Blogger (attempt ${attempt}/${maxRetries})...`)
-      
-      const result = await postToBlogger(article)
-      
-      if (result.success) {
-        return result
-      }
-      
-      // Jika error unauthorized, coba refresh token
-      if (result.error?.code === 'BLOGGER_API_ERROR' && 
-          result.error?.details?.error === 'unauthorized_client') {
-        
-        console.log('🔄 Token unauthorized, mencoba refresh...')
-        
-        // Coba refresh token
-        const refreshResult = await refreshGoogleToken()
-        
-        if (!refreshResult.success) {
-          console.error('❌ Gagal refresh token')
-          lastError = result.error
-          
-          // Tunggu sebentar sebelum retry
-          if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 2000))
-          }
-          continue
-        } else {
-          console.log('✅ Token berhasil di-refresh, mencoba posting ulang...')
-          // Tunggu sebentar agar token bisa digunakan
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          
-          // Coba posting lagi dengan token yang baru
-          const retryResult = await postToBlogger(article)
-          if (retryResult.success) {
-            return retryResult
-          }
-          
-          lastError = retryResult.error
-          if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 2000))
-          }
-          continue
-        }
-      }
-      
-      // Jika error lain, langsung return
-      return result
-      
-    } catch (error: any) {
-      lastError = error
-      console.error(`❌ Attempt ${attempt} failed:`, error.message)
-      
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 2000))
-      }
-    }
-  }
-  
-  return {
-    success: false,
-    error: lastError || new Error('Max retries exceeded')
-  }
-}
 
 /**
  * Post artikel ke Blogger
@@ -365,66 +281,6 @@ function formatContentForBlogger(article: {
   return content
 }
 
-/**
- * Test koneksi Blogger API
- */
-async function testBloggerConnection(): Promise<{ success: boolean; data?: any; error?: any }> {
-  try {
-    console.log('🔗 Testing koneksi ke Blogger API...')
-    
-    const BLOGGER_BLOG_ID = process.env.BLOGGER_BLOG_ID
-    if (!BLOGGER_BLOG_ID) {
-      return {
-        success: false,
-        error: 'BLOGGER_BLOG_ID tidak ditemukan'
-      }
-    }
-
-    const blogger = await initializeBloggerAPI()
-
-    // Test 1: Cek blog info
-    const blogResponse = await blogger.blogs.get({
-      blogId: BLOGGER_BLOG_ID
-    })
-
-    const blogInfo = blogResponse.data
-    console.log(`📝 Blog: ${blogInfo.name}`)
-    console.log(`🔗 URL: ${blogInfo.url}`)
-
-    // Test 2: Cek total posts
-    const postsResponse = await blogger.posts.list({
-      blogId: BLOGGER_BLOG_ID,
-      maxResults: 1
-    })
-
-    console.log(`📊 Total Posts: ${postsResponse.data.items?.length || 0}`)
-
-    return {
-      success: true,
-      data: {
-        blog: blogInfo,
-        postsCount: postsResponse.data.items?.length || 0
-      }
-    }
-
-  } catch (error: any) {
-    console.error('❌ Test connection error:', error.message)
-    
-    if (error.response) {
-      console.error('Status:', error.response.status)
-      console.error('Data:', error.response.data)
-    }
-
-    return {
-      success: false,
-      error: {
-        message: error.message,
-        code: error.response?.data?.error?.code,
-        description: error.response?.data?.error?.message
-      }
-    }
-  }
-}
 
 // ==================== FUNGSI SCRAPER ADVANCED ====================
 
@@ -685,31 +541,8 @@ async function scrapeLokerBumnArticleAdvanced(url: string): Promise<{
 // ==================== MAIN HANDLER ====================
 
 export default defineEventHandler(async (event) => {
-  console.log('🔄 Memulai proses fetch RSS untuk Blogger...')
-  console.log('Waktu:', new Date().toLocaleString('id-ID'))
 
-  // === 1. Validasi Environment Variables ===
-  const requiredEnvVars = [
-    'MONGODB_URI',
-    'RSS_FEED_URL',
-    'BLOGGER_BLOG_ID',
-    'GOOGLE_CLIENT_ID',
-    'GOOGLE_CLIENT_SECRET',
-    'GOOGLE_REFRESH_TOKEN'
-  ]
-
-  for (const envVar of requiredEnvVars) {
-    if (!process.env[envVar]) {
-      console.error(`❌ Environment variable ${envVar} tidak ditemukan`)
-      return { 
-        success: false, 
-        error: `Missing ${envVar}`,
-        message: 'Silakan setup environment variables terlebih dahulu'
-      }
-    }
-  }
-
-  // === 2. Koneksi ke MongoDB ===
+  // === 1. Koneksi ke MongoDB ===
   let client
   try {
     client = new MongoClient(process.env.MONGODB_URI!)
@@ -720,31 +553,43 @@ export default defineEventHandler(async (event) => {
     const articles = db.collection('articles')
     const metadata = db.collection('metadata')
 
-    // === 3. Cek apakah sudah dijalankan dalam 2 jam terakhir ===
-    const lastRun = await metadata.findOne({ key: 'last_cron_run' })
     const now = new Date()
-    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000)
+    now.setHours(23, 0, 0, 0)
+    // Cek apakah sekarang jam 10 malam keatas  
+    const currentHour = now.getHours();
+    const isTenPM = currentHour === 22 || currentHour === 23;
+    if (!isTenPM) {
+        return { 
+            success: true, 
+            saved: 0, 
+            message: 'Diluar jam 10 malam, skip.' 
+        };
+    }
+    // run 2x sehari, cek last run di metadata jam 22 dan 23 malam
+    const meta = await metadata.findOne({ name: 'rssFetchLastRun' });
+    const lastRun = meta ? meta.lastRun : null;
 
-    // if (lastRun && lastRun.timestamp > twoHoursAgo) {
-    //   console.log('⏭️ Dilewati: belum 2 jam sejak eksekusi terakhir')
-    //   console.log(`Terakhir dijalankan: ${lastRun.timestamp.toLocaleString('id-ID')}`)
-    //   return { 
-    //     success: true, 
-    //     skipped: true, 
-    //     reason: 'Too soon',
-    //     lastRun: lastRun.timestamp
-    //   }
-    // }
-
-    // === 4. Update timestamp terakhir run ===
+    if (lastRun) {
+        const lastRunDate = new Date(lastRun);
+        const isSameDay = lastRunDate.toDateString() === now.toDateString();
+        const lastRunHour = lastRunDate.getHours();
+        
+        // Cek apakah sudah dijalankan pada JAM YANG SAMA hari ini
+        if (isSameDay && lastRunHour === currentHour) {
+            return { 
+                success: true, 
+                saved: 0, 
+                message: `Sudah dijalankan hari ini jam ${currentHour}:00, skip.` 
+            };
+        }
+    }
+    // Update last run time
     await metadata.updateOne(
-      { key: 'last_cron_run' },
-      { $set: { timestamp: now } },
-      { upsert: true }
-    )
-
-    // === 5. Ambil RSS Feed ===
-    console.log(`📡 Mengambil RSS dari: ${process.env.RSS_FEED_URL}`)
+        { name: 'rssFetchLastRun' },
+        { $set: { lastRun: now } },
+        { upsert: true }
+    );
+    
     let feed
     try {
       feed = await parser.parseURL(process.env.RSS_FEED_URL!)
@@ -767,55 +612,26 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // === 6. Ambil artikel terbaru yang belum diproses ===
-    let latestItem = null
+  
+    let totalCount = 0;
     for (const item of feed.items) {
       if (!item.link) continue
-      
-      // Cek apakah artikel sudah ada di database
-      const exists = await articles.findOne({ originalUrl: item.link })
-      // if (!exists) {
-      //   latestItem = item
-      //   break // Ambil yang pertama (terbaru) yang belum ada
-      // }
-      latestItem = item
-    }
-
-    if (!latestItem) {
-      console.log('📭 Semua artikel sudah diproses sebelumnya')
-      return { 
-        success: true, 
-        saved: 0, 
-        message: 'Tidak ada artikel baru' 
-      }
-    }
-
-    console.log(`🆕 Artikel baru ditemukan: ${latestItem.title}`)
-    console.log(`🔗 URL: ${latestItem.link}`)
-
-    // === 7. Proses artikel terbaru dengan scraper advanced ===
-    try {
-      // Scrape konten lengkap dengan scraper advanced
-      const scrapedArticle = await scrapeLokerBumnArticleAdvanced(latestItem.link!)
-      
+      // Scrape artikel lengkap
+      var scrapedArticle = await scrapeLokerBumnArticleAdvanced(item.link!)
+      // Lewati jika gagal scrape atau konten kosong
       if (!scrapedArticle || !scrapedArticle.content.trim()) {
-        console.warn('⚠️ Konten kosong untuk:', latestItem.link)
-        return { 
-          success: false, 
-          error: 'Empty content',
-          article: latestItem.title
-        }
+        continue;
       }
 
       // Simpan data ke database
-      const articleData = {
-        title: scrapedArticle.title || latestItem.title || 'Tanpa Judul',
-        originalUrl: latestItem.link!,
+      var  articleData = {
+        title: scrapedArticle.title || item.title || 'Tanpa Judul',
+        originalUrl: item.link!,
         content: scrapedArticle.content,
         excerpt: scrapedArticle.excerpt,
         source: scrapedArticle.source || feed.title || 'lokerbumn.com',
-        publishedAt: latestItem.pubDate ? new Date(latestItem.pubDate) : now,
-        category: scrapedArticle.category || latestItem.categories?.[0] || 'Lowongan Kerja',
+        publishedAt: item.pubDate ? new Date(item.pubDate) : now,
+        category: scrapedArticle.category || item.categories?.[0] || 'Lowongan Kerja',
         tags: scrapedArticle.tags || [],
         hasImages: scrapedArticle.hasImages || false,
         featuredImage: scrapedArticle.featuredImage || null,
@@ -824,99 +640,38 @@ export default defineEventHandler(async (event) => {
         postedToBlogger: false,
         bloggerUrl: null,
         bloggerPostId: null,
-        contentLength: scrapedArticle.contentLength || 0
+        contentLength: scrapedArticle.contentLength || 0,
+        status : 'pending',
       }
 
+      // Cek duplikasi berdasarkan originalUrl
+      const existing = await articles.findOne({ originalUrl: articleData.originalUrl })
+      if (existing) {
+        continue
+      }
+      // hapus 1 data yang createdAt nya terlama dari semua data yang ada dan status nya failed
+      const oldestCreatedAt = await articles.findOne({ status: 'failed' }, { sort: { createdAt: 1 } })
+      if (oldestCreatedAt) {
+        await articles.deleteOne({ createdAt: oldestCreatedAt.createdAt })
+      }
+      // check pokoknya yg ada di database max 7 data
+      totalCount = await articles.countDocuments()
+      // kalo totalnya udah 7, hapus data yg createdAt nya terlama
+      if (totalCount >= 7) {
+        const oldest = await articles.findOne({ status: { $in: ['failed', 'posted'] } }, { sort: { createdAt: 1 } })
+        if (oldest) {
+          await articles.deleteOne({ createdAt: oldest.createdAt })
+        }
+      }
       const insertResult = await articles.insertOne(articleData)
-      console.log(`💾 Disimpan ke database dengan ID: ${insertResult.insertedId}`)
-
-      // === 8. POST KE BLOGGER DENGAN RETRY ===
-      console.log('📤 Memposting ke Blogger...')
-      
-      const bloggerResult = await postToBloggerWithRetry({
-        title: articleData.title,
-        content: articleData.content,
-        tags: articleData.tags,
-        category: articleData.category,
-        excerpt: articleData.excerpt,
-        originalUrl: articleData.originalUrl,
-        featuredImage: articleData.featuredImage
-      }, 3) // 3 kali retry
-
-      if (bloggerResult.success) {
-        // Update database dengan hasil Blogger
-        await articles.updateOne(
-          { _id: insertResult.insertedId },
-          { 
-            $set: { 
-              postedToBlogger: true,
-              bloggerUrl: bloggerResult.blogUrl,
-              bloggerPostId: bloggerResult.postId,
-              bloggerPostedAt: new Date(),
-              updatedAt: new Date()
-            } 
-          }
-        )
-
-        console.log(`✅ Artikel berhasil diposting ke Blogger!`)
-        console.log(`🔗 URL: ${bloggerResult.blogUrl}`)
-
-        // Log summary
-        console.log(`
-🎉 PROSES SELESAI
-════════════════════════════════════════
-📰 Judul: ${articleData.title}
-📝 Kategori: ${articleData.category}
-🏷️ Tags: ${articleData.tags.join(', ') || 'Tidak ada'}
-📊 Panjang: ${articleData.contentLength} karakter
-🖼️ Gambar: ${articleData.hasImages ? 'Ya' : 'Tidak'}
-📈 Status: Blogger ✅ (${bloggerResult.blogUrl})
-        `.trim())
-
-        return { 
-          success: true, 
-          saved: 1,
-          article: {
-            title: articleData.title,
-            bloggerUrl: bloggerResult.blogUrl,
-            bloggerPostId: bloggerResult.postId,
-            tags: articleData.tags,
-            contentLength: articleData.contentLength,
-            hasImages: articleData.hasImages,
-            hasFeaturedImage: !!articleData.featuredImage
-          }
-        }
-
-      } else {
-        // Update database dengan error
-        await articles.updateOne(
-          { _id: insertResult.insertedId },
-          { 
-            $set: { 
-              postedToBlogger: false,
-              bloggerError: bloggerResult.error,
-              updatedAt: new Date()
-            } 
-          }
-        )
-        
-        console.error('❌ Gagal memposting ke Blogger:', bloggerResult.error)
-        return { 
-          success: false, 
-          error: 'Blogger post failed',
-          details: bloggerResult.error
-        }
-      }
-
-    } catch (err) {
-      console.error('❌ Error memproses artikel:', err)
-      return { 
-        success: false, 
-        error: 'Processing failed',
-        details: err instanceof Error ? err.message : 'Unknown error'
-      }
+      console.log(`✅ Artikel disimpan dengan ID: ${insertResult.insertedId}`)
     }
 
+    return { 
+      success: true, 
+      saved: totalCount, 
+      message: 'Proses selesai' 
+    }
   } catch (err) {
     console.error('❌ Error koneksi database atau proses:', err)
     return { 
@@ -933,111 +688,10 @@ export default defineEventHandler(async (event) => {
   }
 })
 
-// ==================== FUNGSI TEST ====================
-
-/**
- * Test posting artikel ke Blogger
- */
-async function testPostToBlogger(): Promise<{ success: boolean; data?: any; error?: any }> {
-  try {
-    console.log('📝 Test memposting artikel ke Blogger...')
-    
-    const testArticle = {
-      title: 'Test Artikel untuk Blogger',
-      content: '<p>Ini adalah konten test artikel untuk Blogger.</p><p>Artikel ini berisi contoh konten dengan HTML formatting.</p>',
-      excerpt: 'Ini adalah test artikel untuk Blogger dengan konten contoh...',
-      category: 'Test',
-      tags: ['test', 'blogger', 'api'],
-      originalUrl: 'https://lokerbumn.com/test-article/',
-      featuredImage: 'https://lokerbumn.com/wp-content/uploads/2024/01/contoh-gambar.jpg'
-    }
-    
-    const result = await postToBlogger(testArticle)
-    
-    return result
-
-  } catch (error: any) {
-    return {
-      success: false,
-      error: error.message
-    }
-  }
-}
-
-/**
- * Test refresh token
- */
-async function testRefreshToken(): Promise<{ success: boolean; data?: any; error?: any }> {
-  try {
-    console.log('🔄 Test refreshing Google token...')
-    
-    const result = await refreshGoogleToken()
-    
-    if (result.success) {
-      console.log('✅ Token berhasil di-refresh!')
-      console.log('📝 Access token baru:', result.access_token?.substring(0, 30) + '...')
-      console.log('⏰ Expiry date:', new Date(result.expiry_date || 0).toLocaleString('id-ID'))
-      console.log('🔄 Refresh token baru?', result.has_new_refresh_token ? 'Ya' : 'Tidak')
-    }
-    
-    return result
-
-  } catch (error: any) {
-    return {
-      success: false,
-      error: error.message
-    }
-  }
-}
-
-/**
- * Test full process dengan auto-refresh
- */
-async function testFullProcess(): Promise<{ success: boolean; data?: any; error?: any }> {
-  try {
-    console.log('🧪 Test full process dengan auto-refresh...')
-    
-    // 1. Test koneksi Blogger
-    const connectionTest = await testBloggerConnection()
-    if (!connectionTest.success) {
-      return connectionTest
-    }
-    
-    // 2. Test refresh token
-    const refreshTest = await testRefreshToken()
-    if (!refreshTest.success) {
-      return refreshTest
-    }
-    
-    // 3. Test posting
-    const postTest = await testPostToBlogger()
-    
-    return {
-      success: postTest.success,
-      data: {
-        connection: connectionTest.data,
-        refresh: refreshTest.data,
-        post: postTest.data
-      },
-      error: postTest.error
-    }
-
-  } catch (error: any) {
-    return {
-      success: false,
-      error: error.message
-    }
-  }
-}
 
 // Export semua fungsi
 export { 
-  testPostToBlogger,
-  testBloggerConnection,
-  testRefreshToken,
-  testFullProcess,
   scrapeLokerBumnArticleAdvanced,
   postToBlogger,
   refreshGoogleToken,
-  postToBloggerWithRetry
 }
