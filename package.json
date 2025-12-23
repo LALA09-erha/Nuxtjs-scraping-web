@@ -15,6 +15,7 @@
     "google-auth-library": "^10.5.0",
     "google-spreadsheet": "^5.0.2",
     "googleapis": "^166.0.0",
+    "jsdom": "^27.3.0",
     "mongodb": "^7.0.0",
     "nuxt": "^4.2.1",
     "ofetch": "^1.5.1",
