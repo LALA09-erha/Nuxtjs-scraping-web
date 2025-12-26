@@ -47,8 +47,13 @@ async function postToBlogger(article: {
     const url = `${process.env.API_URL}/api/posts`
 
     // Kirim request ke API untuk membuat method get
-    var response = await axios.get(url, {
+    var response = await axios.post(url, {
       params: postData,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-XSRF-TOKEN': process.env.XSRF_TOKEN || 'xvT8KknsAh5t2GXOdqPsMp7yVRxRBedw1MkZtteU',
+      },
+      data: postData
     });
     if (response.data && response.data.success) {
       return {
