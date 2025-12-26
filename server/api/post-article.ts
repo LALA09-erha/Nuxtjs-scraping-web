@@ -158,11 +158,11 @@ export default defineEventHandler(async (event) => {
     // run setiap 23.30
     const isTrue = currentHour === 23 && currentMinute === 30;
     if (!isTrue) {
-        return { 
-            success: true, 
-            saved: 0, 
-            message: 'Diluar jam 10 malam, skip.' 
-        };
+        // return { 
+        //     success: true, 
+        //     saved: 0, 
+        //     message: 'Diluar jam 10 malam, skip.' 
+        // };
     }
     const meta = await metadata.findOne({ name: 'rssPostLastRun' });
     const lastRun = meta ? meta.lastRun : null;
@@ -174,11 +174,11 @@ export default defineEventHandler(async (event) => {
         
         // Cek apakah sudah dijalankan pada JAM YANG SAMA hari ini
         if (isSameDay && lastRunHour === currentHour) {
-            return { 
-                success: true, 
-                saved: 0, 
-                message: `Sudah dijalankan hari ini jam ${currentHour}:00, skip.` 
-            };
+            // return { 
+            //     success: true, 
+            //     saved: 0, 
+            //     message: `Sudah dijalankan hari ini jam ${currentHour}:00, skip.` 
+            // };
         }
     }
     // // Update last run time
