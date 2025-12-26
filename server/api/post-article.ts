@@ -44,16 +44,16 @@ async function postToBlogger(article: {
     }
 
     // API_URL dari environment variable API_URL+/api/posts
-    const url = `${process.env.API_URL}/api/posts`
-
+    var url = `${process.env.API_URL}/api/posts`
+    url = 'https://goblog.iceiy.com/articles/api/posts';
     // Kirim request ke API untuk membuat method get
-    var response = await axios.post(url, {
+    var response = await axios.get(url, {
       params: postData,
       headers: {
         'Content-Type': 'application/json',
         'X-XSRF-TOKEN': process.env.XSRF_TOKEN || 'xvT8KknsAh5t2GXOdqPsMp7yVRxRBedw1MkZtteU',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       },
-      data: postData
     });
     if (response.data && response.data.success) {
       return {
