@@ -1,9 +1,6 @@
 import { defineEventHandler } from 'h3'
-import Parser from 'rss-parser'
-import * as cheerio from 'cheerio'
 import { MongoClient } from 'mongodb'
 import axios from 'axios'
-import { google } from 'googleapis'
 
 const parser = new Parser()
 

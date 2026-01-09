@@ -575,11 +575,11 @@ export default defineEventHandler(async (event) => {
         
         // Cek apakah sudah dijalankan pada JAM YANG SAMA hari ini
         if (isSameDay && lastRunHour === currentHour) {
-            return { 
-                success: true, 
-                saved: 0, 
-                message: `Sudah dijalankan hari ini jam ${currentHour}:00, skip.` 
-            };
+            // return { 
+            //     success: true, 
+            //     saved: 0, 
+            //     message: `Sudah dijalankan hari ini jam ${currentHour}:00, skip.` 
+            // };
         }
     }
     // Update last run time
@@ -644,10 +644,7 @@ export default defineEventHandler(async (event) => {
       }
 
       // Cek duplikasi berdasarkan originalUrl
-      const existing = await articles.findOne({ originalUrl: articleData.originalUrl })
-      if (existing) {
-        continue
-      }
+      
       
       // check pokoknya yg ada di database max 7 data
         totalCount = await articles.countDocuments()
@@ -697,6 +694,10 @@ export default defineEventHandler(async (event) => {
                 continue
             }
         }
+      const existing = await articles.findOne({ originalUrl: articleData.originalUrl })
+      if (existing) {
+        continue
+      }
       const insertResult = await articles.insertOne(articleData)
       console.log(`✅ Artikel disimpan dengan ID: ${insertResult.insertedId}`)
     }
