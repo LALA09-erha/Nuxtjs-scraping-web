@@ -558,11 +558,11 @@ export default defineEventHandler(async (event) => {
     const currentHour = now.getHours();
     const isTenPM = currentHour === 22 || currentHour === 23;
     if (!isTenPM) {
-        return { 
-            success: true, 
-            saved: 0, 
-            message: 'Diluar jam 10 malam, skip.' 
-        };
+        // return { 
+        //     success: true, 
+        //     saved: 0, 
+        //     message: 'Diluar jam 10 malam, skip.' 
+        // };
     }
     // run 2x sehari, cek last run di metadata jam 22 dan 23 malam
     const meta = await metadata.findOne({ name: 'rssFetchLastRun' });
